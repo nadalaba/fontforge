@@ -332,7 +332,7 @@ if (( ! $nomake )); then
     cd "$FFPATH";
 
     if [ -f CMakeLists.txt ]; then
-        if [ ! -f build/fontforge.configure-complete ] || (($reconfigure)); then
+        if [ ! -f "$BUILD_DIR/fontforge.configure-complete" ] || (($reconfigure)); then
             log_status "Running the configure script..."
             
             if (($appveyor+$ghactions)); then
@@ -346,29 +346,29 @@ if (( ! $nomake )); then
                 EXTRA_CMAKE_OPTS="-DENABLE_QT=yes"
             fi
 
-            mkdir -p build && cd build
+            mkdir -p "$BUILD_DIR" && cd "$BUILD_DIR"
             time cmake -GNinja \
                 -DCMAKE_INSTALL_PREFIX="$TARGET" \
                 -DENABLE_FREETYPE_DEBUGGER="$WORK/$FREETYPE_NAME" \
                 -DENABLE_LIBREADLINE=no \
                 -DPython3_EXECUTABLE=/$MINGVER/bin/python.exe \
                 $EXTRA_CMAKE_OPTS \
-                .. \
+                "$FFPATH" \
                 || bail "FontForge configure"
             touch fontforge.configure-complete
             cd "$FFPATH"
         fi
         
         log_status "Compiling FontForge..."
-        time ninja -C build || bail "FontForge build"
+        time ninja -C "$BUILD_DIR" || bail "FontForge build"
 
         if (($appveyor+$ghactions)); then
             log_status "Running the test suite..."
-            CTEST_PARALLEL_LEVEL=100 ninja -C build check || bail "FontForge check"
+            CTEST_PARALLEL_LEVEL=100 ninja -C "$BUILD_DIR" check || bail "FontForge check"
         fi
 
         log_status "Installing FontForge..."
-        ninja -C build install || bail "FontForge install"
+        ninja -C "$BUILD_DIR" install || bail "FontForge install"
     else
         if [ ! -f fontforge.configure-complete ] || (($reconfigure)); then
             log_status "Running the configure script..."
