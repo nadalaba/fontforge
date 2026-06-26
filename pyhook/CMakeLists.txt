@@ -104,7 +104,7 @@ else()
 
       # Install the module files
       file(INSTALL
-        DESTINATION \"${CMAKE_INSTALL_PREFIX}/${PYHOOK_INSTALL_DIR}\"
+        DESTINATION \"\${CMAKE_INSTALL_PREFIX}/${PYHOOK_INSTALL_DIR}\"
         TYPE MODULE
         FILES
           \"$<TARGET_FILE:fontforge_pyhook>\"

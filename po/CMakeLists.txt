@@ -7,13 +7,7 @@
 #   with the master .pot file and with context
 
 # TODO: Probably should add a FindXGettext or something
-add_custom_target(potfiles
-  COMMAND xgettext
-    --from-code=utf-8
-    -k_ -kN_ -kS_ -kU_ -kNU_ -kP_:1,2
-    --sort-by-file
-    --add-comments=GT:
-    "-o${CMAKE_CURRENT_BINARY_DIR}/FontForge.pot"
+file(GLOB FONTFORGE_SOURCES
     ../fontforge/*.c
     ../fontforge/*.cpp
     ../fontforgeexe/*.c
@@ -26,6 +20,15 @@ add_custom_target(potfiles
     ../Unicode/*.h
     ../desktop/org.fontforge.FontForge.appdata.xml.in
     ../desktop/org.fontforge.FontForge.desktop
+)
+add_custom_target(potfiles
+  COMMAND xgettext
+    --from-code=utf-8
+    -k_ -kN_ -kS_ -kU_ -kNU_ -kP_:1,2
+    --sort-by-file
+    --add-comments=GT:
+    "-o${CMAKE_CURRENT_BINARY_DIR}/FontForge.pot"
+    ${FONTFORGE_SOURCES}
   COMMAND patch "${CMAKE_CURRENT_BINARY_DIR}/FontForge.pot" "pottitle.patch"
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
