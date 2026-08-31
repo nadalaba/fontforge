@@ -345,6 +345,11 @@ Module functions
    Returns a tuple listing the directory paths which are searched for python
    scripts during FontForge initialization.
 
+.. function:: userConfigPath()
+
+   Returns the path to the user's FontForge configuration directory, which should
+   be writable.
+
 .. function:: fonts()
 
    Returns a tuple of all fonts currently loaded into FontForge for editing
@@ -409,6 +414,15 @@ Module functions
 
       Retain all recognized font tables that do not have a native format.
 
+   This function can also be used with the ``with`` statement, in which case
+   there is no need to call :meth:`font.close()` explicitly:
+
+   ::
+
+      with fontforge.open('somefont.sfd') as fnt:
+          # do something
+          fnt.generate('somefont.ttf')
+
 .. function:: parseTTInstrs(string)
 
    Returns a binary string each byte of which corresponds to a truetype
@@ -439,6 +453,9 @@ Module functions
    and computing the optical left and right side bearings (for 'lfbd' and 'rtbd'
    features). For more information see its own section.
 
+.. function:: onAppClosing(hook)
+
+   Add a python function which is called when FontForge is closing down.
 
 .. _fontforge.ui_functions:
 
@@ -681,6 +698,16 @@ Not a very useful example.
       needs to filter all possible filenames of this file type. This argument
       should be a comma separated list of extensions. It may be omitted, in
       which case it defaults to being the same as the "extension" argument above.
+
+.. function:: getConvexNib(context)
+
+   Returns the specified 'Convex' nib as a layer. ``context`` may be
+   ``"default"``, ``"freehand"``, or ``"ui"``.
+
+.. function:: setConvexNib(nib, context)
+
+   Sets the specified 'Convex' to a layer/contour. ``context`` may be
+   ``"default"``, ``"freehand"``, or ``"ui"``.
 
 .. function:: logWarning(msg)
 
@@ -1323,6 +1350,10 @@ Layers may be compared to see if their contours are similar.
    the current layer and the first argument. If amount is 0 the result will
    look like the current layer, if 1 then like the first argument.
 
+.. method:: layer.reverseDirection()
+
+   Reverse the orientation of each contour in the layer.
+
 .. method:: layer.round([factor])
 
    Rounds the x and y coordinates. If factor is specified then ::
@@ -1440,14 +1471,14 @@ Layers may be compared to see if their contours are similar.
 
 .. method:: layer.xBoundsAtY(ybottom[, ytop])
 
-   Finds the minimum and maximum x positions attained by the contour when y is
+   Finds the minimum and maximum x positions attained by the layer when y is
    between ybottom and ytop (if ytop is not specified it is assumed the same as
    ybottom). If the layer does not have any y values in the specified range
    then FontForge will return ``None``.
 
 .. method:: layer.yBoundsAtX(xleft[, xright])
 
-   Finds the minimum and maximum y positions attained by the contour when x is
+   Finds the minimum and maximum y positions attained by the layer when x is
    between xleft and xright (if xright is not specified it is assumed the same
    as xleft). If the layer does not have any x values in the specified range
    then FontForge will return ``None``.
@@ -1669,6 +1700,11 @@ must be created through the font.
 
    Whether this glyph has been modified. This is (should be) maintained
    automatically, but you may set it if you wish.
+
+.. attribute:: glyph.codepoint
+
+   Unicode code point for this glyph in U+XXXX format for the Basic Multilingual
+   Plane, and up to U+XXXXXX for the supplementary planes, or ``None``. (readonly)
 
 .. attribute:: glyph.color
 
@@ -2702,15 +2738,32 @@ must be created through the font.
    validated, if force is unspecified (or specified as false) then it will
    return the cached value if it is known, otherwise will validate it.
 
+.. method:: glyph.xBoundsAtY(ybottom[, ytop, layer=])
+
+   Finds the minimum and maximum x positions attained by the glyph when y is
+   between ybottom and ytop (if ytop is not specified it is assumed the same as
+   ybottom). If the glyph does not have any y values in the specified range
+   then FontForge will return ``None``. A layer name or index may be provided
+   to only find bounds for a particular layer.
+
+.. method:: glyph.yBoundsAtX(xleft[, xright, layer=])
+
+   Finds the minimum and maximum y positions attained by the glyph when x is
+   between xleft and xright (if xright is not specified it is assumed the same
+   as xleft). If the glyph does not have any x values in the specified range
+   then FontForge will return ``None``. A layer name or index may be provided
+   to only find bounds for a particular layer.
+
 .. method:: glyph.draw(pen)
 
    Draw the glyph's outline to the `pen argument. <http://robofab.org/objects/pens.html>`_
 
-.. method:: glyph.glyphPen([replace=False])
+.. method:: glyph.glyphPen([replace=True])
 
    Creates a new glyphPen which will draw into the current glyph. By default
    the pen will replace any existing contours and references, but setting the
    optional keyword argument, ``replace`` to false will retain the old contents.
+   Replacing the foreground layer will also reset the advance.
 
 .. method:: glyph.addInflections()
 
@@ -2749,6 +2802,10 @@ This type may not be pickled.
    those entries for which glyphs exist.
 
    This is read-only.
+
+.. attribute:: selection.font
+
+   Returns the font for which this is a selection.
 
 .. method:: selection.__iter__()
 
@@ -3293,6 +3350,10 @@ This type may not be pickled.
 
    PostScript copyright notice
 
+.. attribute:: font.creationtime
+
+   Font creation time. (readonly)
+
 .. attribute:: font.cvt
 
    Returns a sequence object containing the font's cvt table. Changes made
@@ -3521,6 +3582,16 @@ This type may not be pickled.
       Reserved (set to 0).
 
    (`source <https://docs.microsoft.com/en-us/typography/opentype/spec/head>`_)
+
+.. attribute:: font.markClasses
+
+   A tuple each entry of which is itself a tuple containing a mark-class-name
+   and a tuple of glyph-names.
+
+.. attribute:: font.markSets
+
+   A tuple each entry of which is itself a tuple containing a mark-set-name
+   and a tuple of glyph-names.
 
 .. attribute:: font.layer_cnt
 
@@ -3947,7 +4018,13 @@ This type may not be pickled.
 
 .. attribute:: font.style_set_names
 
-   A tuple, each entry of which is a 3-element tuple containing the language name (e.g. ``"English (US)"``), the style set tag (e.g. ``"ss01"``) and the style set name.
+   A tuple, each entry of which is a 3-element tuple containing:
+     * For style sets, the language name (e.g. ``"English (US)"``), the style set
+       tag (e.g. ``"ss01"``) and the style set name.
+     * For character variants, the language name, the character variant tag (e.g.
+       ``"cv01"``) and a 5-element tuple containing the feature name, the tooltip text,
+       the sample text (these three can be ``None``), a tuple containing parameter
+       names (can be empty) and ``None`` (reserved for the character list).
 
 .. attribute:: font.temporary
 
@@ -4049,6 +4126,9 @@ This type may not be pickled.
    might have no lower case letters because it was upper case only, or didn't
    include glyphs for a script with lower case letters).
 
+.. attribute:: font.xuid
+
+   PostScript eXtended Unique ID.
 
 .. method:: font.__iter__()
 
@@ -4114,7 +4194,7 @@ This type may not be pickled.
    * ``gsub_ligature``
    * ``gsub_context``
    * ``gsub_contextchain``
-   * ``gsub_revesechain``
+   * ``gsub_reversecchain``
    * ``morx_indic``
    * ``morx_context``
    * ``morx_insert``
@@ -4129,7 +4209,7 @@ This type may not be pickled.
    * ``kern_statemachine``
 
    The flags argument is a tuple of strings, or ``None``. At most one of these
-   strings may be the name of a mark class. The others are:
+   strings may be the name of a mark class or a mark set. The others are:
 
    * ``right_to_left``
    * ``ignore_bases``
@@ -4169,8 +4249,10 @@ This type may not be pickled.
 
    The ``type`` should be one of the strings "glyph", "class", "coverage" or
    "reversecoverage". The ``rule`` should be a string specifying a string to
-   match and a set of lookups to apply once the match has been made. (See
-   below for more details).
+   match and a set of lookups to apply once the match has been made. For
+   "glyph" and "class" subtables, ``rule`` may also be a sequence of strings;
+   passing a sequence creates one subtable containing multiple contextual rules.
+   (See below for more details).
 
    The remaining arguments are optional, keyword arguments.
 
@@ -4347,6 +4429,10 @@ This type may not be pickled.
 .. method:: font.cidRemoveSubFont()
 
    Removes the current subfont from a cid-keyed font.
+
+.. method:: font.clearSpecialData()
+
+   Clear special data not accessible in FontForge.
 
 .. method:: font.close()
 
@@ -4536,6 +4622,11 @@ This type may not be pickled.
 
       Include a 'TeX ' table in an ttf/otf file
 
+   .. object:: no-mac-names
+
+      Do not include Mac names used on Classic Mac OS. This option does not
+      affect native macOS (formerly known as Mac OS X) applications.
+
    .. object:: round
 
       Round PS coordinates to integers
@@ -4654,7 +4745,7 @@ This type may not be pickled.
    x-height and another for the top of capitals and ascenders (and perhaps a
    fourth for descenders). Each such zone is specified by the ``vMap`` argument
    which is a tuple of 3-tuples, each 3-tuple specifying a zone with: Original
-   location, original width, and final location.
+   location, final location, and original width.
 
    .. note::
 
@@ -4725,7 +4816,7 @@ This type may not be pickled.
 
    Returns whether the named subtable contains a vertical kerning data
 
-.. method:: font.italicize(italic_angle=, ia=lc_condense=, lc=uc_condense=, uc=symbol_condense=, symbol=deserif_flat=, deserif_slant=, deserif_pen=, baseline_serifs=, xheight_serifs=, ascent_serifs=, descent_serifs=, diagonal_serifs=, a=, f=, u0438=, u043f=, u0442=, u0444=, u0448=, u0452=, u045f=)
+.. method:: font.italicize(italic_angle=, ia=lc_condense=, lc=uc_condense=, uc=symbol_condense=, symbol=deserif_flat=, deserif_slant=, deserif_pen=, baseline_serifs=, xheight_serifs=, ascent_serifs=, descent_serifs=, diagonal_serifs=, a=, f=, u0438=, u043f=, u0442=, u0444=, u0448=, u0452=, u045f=, xheight_percent=)
 
    This function uses keyword parameters. None are required, if omitted a
    default value will be used. Some keywords have abbreviations ("ia" for
@@ -4751,6 +4842,10 @@ This type may not be pickled.
    transformations of glyphs like "f", setting it to 1 will give "f" a tail
    which looks like a rotated version of its head, and setting it to 2 will
    simply extend the main stem of "f" below the baseline.
+
+   The ``xheight_percent`` keyword specifies how much the x-height should be
+   changed by the transformation. The default value is 0.95, which reduces the
+   x-height to 95% of its original size; a value of 1.0 means no change.
 
 .. method:: font.lookupSetFeatureList(lookup_name, feature_script_lang_tuple)
 

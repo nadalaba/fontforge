@@ -32,13 +32,6 @@
 #include "intl.h"
 struct giocontrol;
 
-#ifndef MAX
-#define MAX(x,y)   (((x) > (y)) ? (x) : (y))
-#endif
-#ifndef MIN
-#define MIN(x,y)   (((x) < (y)) ? (x) : (y))
-#endif
-
 typedef struct gtextinfo {
     unichar_t *text;
     GImage *image;
@@ -149,7 +142,7 @@ struct scrollbarinit { int32_t sb_min, sb_max, sb_pagesize, sb_pos; };
 typedef int (*GGadgetHandler)(GGadget *,GEvent *);
 typedef unichar_t **(*GTextCompletionHandler)(GGadget *,int from_tab);
 
-enum gg_flags { gg_visible=1, gg_enabled=2, gg_pos_in_pixels=4,
+enum gg_flags { gg_none=0, gg_visible=1, gg_enabled=2, gg_pos_in_pixels=4,
 		gg_sb_vert=8, gg_line_vert=gg_sb_vert,
 		gg_but_default=0x10, gg_but_cancel=0x20,
 		gg_cb_on=0x40, gg_rad_startnew=0x80,
@@ -190,6 +183,15 @@ enum gg_flags { gg_visible=1, gg_enabled=2, gg_pos_in_pixels=4,
 		gg_flow_lvcenter = gg_pos_use0,
 		gg_flow_noalignlabel = gg_tabset_scroll
 };
+
+#ifdef __cplusplus
+extern "C++" {
+inline enum gg_flags operator|(enum gg_flags lhs, enum gg_flags rhs) {
+    return static_cast<enum gg_flags>(static_cast<int>(lhs) |
+                                      static_cast<int>(rhs));
+}
+}
+#endif
 
 typedef struct ggadgetdata {
     GRect pos;
@@ -451,6 +453,7 @@ void GFileChooserSetBookmarks(unichar_t **b);
 void GFileChooserSetPaths(GGadget *g, const char* const* path);
 unichar_t **GFileChooserGetBookmarks(void);
 void GFileChooserSetPrefsChangedCallback(void *data, void (*p_c)(void *));
+char **GFileChooserGetMultipleFiles(const char* multipath);
 
 void GHVBoxSetExpandableCol(GGadget *g,int col);
 void GHVBoxSetExpandableRow(GGadget *g,int row);
@@ -590,6 +593,7 @@ extern int GGadgetUndoMacEnglishOptionCombinations(GEvent *event);
 
 /* Among other things, this routine sets global icon cache up. */
 extern void GGadgetInit(void);
+extern void GTabSetInit();
 extern int GGadgetWithin(GGadget *g, int x, int y);
 extern void GMenuItemArrayFree(GMenuItem *mi);
 extern void GMenuItem2ArrayFree(GMenuItem2 *mi);

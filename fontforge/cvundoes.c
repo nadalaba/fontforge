@@ -50,8 +50,8 @@
 #include "tottfgpos.h"
 #include "ustring.h"
 #include "utype.h"
-#include "views.h"
 
+#include "ffunistd.h"
 #include <math.h>
 
 #ifndef HAVE_EXECINFO_H
@@ -1099,6 +1099,9 @@ void _CVRestoreTOriginalState(CharViewBase *cv,PressedOn *p) {
 	img->xscale = uimg->xscale;
 	img->yscale = uimg->yscale;
     }
+    /* Restore metrics during incremental transforms to avoid mousemove drift. */
+    cv->sc->width  = undo->u.state.width;
+    cv->sc->vwidth = undo->u.state.vwidth;
 }
 
 void _CVUndoCleanup(CharViewBase *cv,PressedOn *p) {
@@ -2366,8 +2369,7 @@ static void _PasteToSC(SplineChar *sc,Undoes *paster,FontViewBase *fv,int pastei
 	if ( !pasteinto ) {
 	    if ( !sc->layers[layer].background &&
 		    SCWasEmpty(sc,pasteinto==0?layer:-1) ) {
-		if ( !sc->parent->onlybitmaps )
-		    SCSynchronizeWidth(sc,width,sc->width,fv);
+		SCSynchronizeWidth(sc,width,sc->width,fv);
 		sc->vwidth = vwidth;
 	    }
 	    SplinePointListsFree(sc->layers[layer].splines);

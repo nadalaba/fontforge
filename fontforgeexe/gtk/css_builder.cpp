@@ -29,8 +29,16 @@
 
 #include <cstring>
 #include <functional>
+#include <iostream>
 #include <map>
 #include <vector>
+
+typedef struct gdisplay GDisplay;
+
+extern Color histogram_graphcol;
+extern "C" Color GDrawGetDefaultForeground(GDisplay*);
+extern "C" Color GDrawGetDefaultBackground(GDisplay*);
+extern "C" Color GDrawGetWarningForeground(GDisplay*);
 
 namespace ff::app {
 
@@ -48,7 +56,7 @@ static std::string css_color(Color col, bool enabled = true) {
     return value_string;
 }
 
-template <auto GBox::*PROP>
+template <auto GBox::* PROP>
 std::string color_property(const GBox& box_resource, bool enabled) {
     return css_color(box_resource.*PROP, enabled);
 }
@@ -111,8 +119,10 @@ static std::string margin(const GBox& box_resource, bool enabled) {
 
 static std::string border_style(const GBox& box_resource, bool enabled) {
     static const std::map<enum border_type, std::string> border_type_map = {
-        {bt_none, "none"},     {bt_box, "solid"},       {bt_raised, "outset"},
-        {bt_lowered, "inset"}, {bt_engraved, "groove"}, {bt_embossed, "ridge"},
+        // CSS property values "inset" and "outset" modify colors, so we don't
+        // use them.
+        {bt_none, "none"},     {bt_box, "solid"},       {bt_raised, "solid"},
+        {bt_lowered, "solid"}, {bt_engraved, "groove"}, {bt_embossed, "ridge"},
         {bt_double, "double"}};
     return border_type_map.at(
         static_cast<enum border_type>(box_resource.border_type));
@@ -197,17 +207,42 @@ std::map<std::string, std::string> collect_css_properties_disabled(
     return evaluate_css_properties(css_property_map, box_resource, false);
 }
 
+std::map<std::string, std::string> collect_css_properties_selected(
+    const GBox& box_resource) {
+    static const std::vector<std::pair<std::string, CssPropertyEvalCB>>
+        css_property_map = {
+            {"color", color_property<&GBox::main_foreground>},
+            {"background-color", color_property<&GBox::active_border>},
+        };
+
+    return evaluate_css_properties(css_property_map, box_resource, true);
+}
+
 std::map<std::string, std::string> collect_css_properties_main(
     const struct resed* ri_extras) {
     std::map<std::string, std::string> collection;
 
     for (const struct resed* rec = ri_extras; rec && rec->resname; ++rec) {
+        if (std::strcmp(rec->resname, "Foreground") == 0) {
+            collection["color"] = css_color(*(Color*)(rec->val));
+        }
         if (std::strcmp(rec->resname, "Background") == 0) {
             collection["background-color"] = css_color(*(Color*)(rec->val));
         }
     }
 
     return collection;
+}
+
+std::map<std::string, std::string> collect_css_properties_color(
+    const GBox& box_resource) {
+    static const std::vector<std::pair<std::string, CssPropertyEvalCB>>
+        css_property_map = {
+            {"color", color_property<&GBox::main_foreground>},
+            {"background-color", color_property<&GBox::main_background>},
+        };
+
+    return evaluate_css_properties(css_property_map, box_resource, true);
 }
 
 std::string build_style(const std::string& selector,
@@ -231,6 +266,42 @@ std::string build_unset_style(
     return selector + " {\n" + property_list + "}\n";
 }
 
+// Some GTK widgets have substantially different structure from their GDraw
+// analogs. For them we collect only color properties.
+std::string build_color_only_styles(const GResInfo* gdraw_ri) {
+    static const std::vector<
+        std::tuple<std::string /*GDraw resource*/, std::string /*CSS class*/,
+                   std::string /*CSS pseudoclass*/>>
+        css_selector_map_color = {
+            {"GList", "treeview", "selected"},
+            {"GList", "combobox menuitem", "hover"},
+            {"GTabSet", "header", "checked"},
+            {"GTabSet", "tab", "checked"},
+        };
+
+    std::string styles;
+    for (const auto& [gres, css_class, css_pseudoclass] :
+         css_selector_map_color) {
+        const GResInfo* ri = gdraw_ri;
+        for (; ri != NULL && ri->resname != gres; ri = ri->next);
+        if (ri == NULL || ri->boxdata == NULL) {
+            std::cerr << "GDraw resource \"" << gres << "\" not found"
+                      << std::endl;
+            continue;
+        }
+        auto props_color = collect_css_properties_color(*(ri->boxdata));
+        styles += build_style(css_class, props_color);
+
+        auto props_disabled = collect_css_properties_disabled(*(ri->boxdata));
+        styles += build_style(css_class + ":disabled", props_disabled);
+
+        auto props_selected = collect_css_properties_selected(*(ri->boxdata));
+        styles +=
+            build_style(css_class + ":" + css_pseudoclass, props_selected);
+    }
+    return styles;
+}
+
 std::string build_styles(const GResInfo* gdraw_ri) {
     struct Selector {
         std::string node_name;
@@ -241,13 +312,16 @@ std::string build_styles(const GResInfo* gdraw_ri) {
     };
 
     static const std::map<std::string, Selector> css_selector_map = {
-        {"", {"box", {}}},
-        {"GLabel", {"label", {"button"}}},
+        {"", {"box", {"tooltip"}}},
+        {"GLabel", {"label", {"button", "tooltip", "tab"}}},
         {"GButton", {"button", {"spinbutton"}}},
         {"GDefaultButton", {"button#ok", {}}},
         {"GCancelButton", {"button#cancel", {}}},
         {"GNumericField", {"spinbutton", {}}},
         {"GNumericFieldSpinner", {"spinbutton button", {}}},
+        {"GTextField", {"entry", {"spinbutton"}}},
+        {"GGadget.Popup", {"tooltip", {}}},
+        {"GScrollBar", {"scrollbar", {}}},
     };
 
     std::string styles;
@@ -259,10 +333,20 @@ std::string build_styles(const GResInfo* gdraw_ri) {
         }
         const Selector& selector = sel_it->second;
 
-        if ((std::strcmp(ri->resname, "") == 0) && ri->extras) {
+        if ((std::strcmp(ri->resname, "") == 0 ||
+             std::strcmp(ri->resname, "GGadget.Popup") == 0) &&
+            ri->extras) {
             // Collect some default properties from the base class.
             auto props_main = collect_css_properties_main(ri->extras);
             styles += build_style(selector.node_name, props_main);
+
+            // When the node is inside predefined containers, we shall unset the
+            // affected properties
+            for (const std::string& container : selector.excluded_containers) {
+                styles += build_unset_style(
+                    container + " " + selector.node_name, props_main);
+            }
+
             continue;
         }
 
@@ -286,6 +370,18 @@ std::string build_styles(const GResInfo* gdraw_ri) {
                 props_disabled);
         }
     }
+
+    styles += build_color_only_styles(gdraw_ri);
+    styles += "tab { margin-bottom: 1px; }\n";
+
+    styles += "@define-color ff_histogram_bg " +
+              css_color(GDrawGetDefaultBackground(nullptr)) + ";\n";
+    styles += "@define-color ff_histogram_axis " +
+              css_color(GDrawGetDefaultForeground(nullptr)) + ";\n";
+    styles += "@define-color ff_histogram_bars " +
+              css_color(histogram_graphcol) + ";\n";
+    styles += "@define-color ff_histogram_moving_average " +
+              css_color(GDrawGetWarningForeground(nullptr)) + ";\n";
 
     return styles;
 }

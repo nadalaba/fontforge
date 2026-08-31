@@ -33,13 +33,14 @@
 #include "ttfinstrs.h"
 
 #include "baseviews.h"
-#include "ffglib.h"
-
 #include "dlist.h"
 #include "ggadget.h"
 #include "multidialog.h"
 #include "search.h"
-#include "metrics.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 struct gfi_data;
 struct contextchaindlg;
@@ -420,7 +421,6 @@ typedef struct metricsview {
     GTextInfo *scriptlangs;
     int word_index;
     int layer;
-    int fake_unicode_base;
     GIC *gwgic;
     int ptsize, dpi;
     int ybaseline;
@@ -471,23 +471,10 @@ typedef struct fontview {
     int sel_index;
     struct lookup_subtable *cur_subtable;
     struct qg_data *qg;
-    GPid pid_webfontserver;
     bool script_unsaved; // Whether or not there's an unsaved script in script dialog
 } FontView;
 
-typedef struct findsel {
-    GEvent *e;
-    real fudge;		/* One pixel fudge factor */
-    real xl,xh, yl, yh;	/* One pixel fudge factor */
-    real c_xl,c_xh, c_yl, c_yh;		/* fudge rectangle for control points, larger than above if alt is depressed */
-    unsigned int select_controls: 1;	/* notice control points */
-    unsigned int seek_controls: 1;	/* notice control points before base points */
-    unsigned int all_controls: 1;	/* notice control points even if the base points aren't selected (in truetype point numbering mode where all cps are visible) */
-    unsigned int alwaysshowcontrolpoints:1; /* if the BCP are forced on, then we want the selection code paths
-					     * to also know that so the user can drag the BCP of a non selected splinepoint */
-    real scale;
-    PressedOn *p;
-} FindSel;
+/* FindSel is now defined in baseviews.h */
 
 typedef struct searchview {
     struct cvcontainer base;
@@ -637,7 +624,7 @@ extern void StrokeCharViewInits(StrokeDlg *sd,int cid);
 struct lksubinfo {
     struct lookup_subtable *subtable;
     unsigned int deleted: 1;
-    unsigned int new: 1;
+    unsigned int isnew: 1;
     unsigned int selected: 1;
     unsigned int moved: 1;
 };
@@ -646,7 +633,7 @@ struct lkinfo {
     OTLookup *lookup;
     unsigned int open: 1;
     unsigned int deleted: 1;
-    unsigned int new: 1;
+    unsigned int isnew: 1;
     unsigned int selected: 1;
     unsigned int moved: 1;
     int16_t subtable_cnt, subtable_max;
@@ -930,7 +917,7 @@ enum transdlg_flags { tdf_enableback=0x1, tdf_enablekerns=0x2,
 extern void TransformDlgCreate(void *data,void (*transfunc)(void *,real *,int,BVTFunc *,enum fvtrans_flags),
 	int (*getorigin)(void *,BasePoint *,int), enum transdlg_flags flags,
 	enum cvtools cvt);
-extern void BitmapDlg(FontView *fv,SplineChar *sc, int isavail);
+extern void BitmapDlg(FontViewBase *fv, GWindow gw, SplineChar *sc, int isavail);
 extern int SimplifyDlg(SplineFont *sf,struct simplifyinfo *smpl);
 extern void CVReviewHints(CharView *cv);
 extern void CVCreateHint(CharView *cv,int ishstem,int preserveundoes);
@@ -961,11 +948,6 @@ extern void CVSetCharChanged(CharView *cv,int changed);
 extern int CVAnySel(CharView *cv, int *anyp, int *anyr, int *anyi, int *anya);
 extern int CVAnySelPoints(CharView *cv);
 
-/**
- * Get all the selected points in the current cv.
- * Caller must g_list_free() the returned value.
- */
-extern GList_Glib* CVGetSelectedPoints(CharView *cv);
 extern void CVSelectPointAt(CharView *cv);
 extern int CVClearSel(CharView *cv);
 extern int CVSetSel(CharView *cv,int mask);
@@ -1055,6 +1037,10 @@ extern void BVChar(BitmapView *cv, GEvent *event );
 extern void CVMouseDownPoint(CharView *cv,GEvent *event);
 extern void CVMouseMovePoint(CharView *cv,PressedOn *);
 extern void CVMouseUpPointer(CharView *cv );
+extern bool CVScaleSelectionBounds(CharView *cv, DBounds *bounds);
+extern void CVScaleHandlePoint(const DBounds *bb, enum expandedge edge, BasePoint *pt);
+#define CVSCALE_HANDLE_FUDGE 7.5    // #pixels for fudging mouse hover proximity to handles
+extern bool CVScaleHandlePress(CharView *cv, real fudge);
 extern void CVCheckResizeCursors(CharView *cv);
 extern void CVMouseDownHand(CharView *cv);
 extern void CVMouseUpHand(CharView *cv);
@@ -1184,11 +1170,6 @@ extern void AnchorControl(SplineChar *sc,AnchorPoint *ap,int layer);
 extern void AnchorControlClass(SplineFont *_sf,AnchorClass *ac,int layer);
 
 extern void FVSelectByPST(FontView *fv);
-
-enum hist_type { hist_hstem, hist_vstem, hist_blues };
-struct psdict;
-extern void SFHistogram(SplineFont *sf,int layer, struct psdict *private,uint8_t *selected,
-	EncMap *map, enum hist_type which);
 
 extern void ContextChainEdit(SplineFont *sf,FPST *fpst,
 	struct gfi_data *gfi,unichar_t *newname,int layer);
@@ -1462,21 +1443,6 @@ extern void CVVisitAllControlPoints( CharView *cv, bool preserveState,
 extern void CVUnselectAllBCP( CharView *cv );
 
 
-/**
- * This will call your visitor function 'f' on any selected BCP. This
- * is regardless of if the BCP is the next or prev BCP for it's
- * splinepoint.
- *
- * This function doesn't use udata at all, it simply passes it on to
- * your visitor function so it may do something with it like record
- * results or take optional parameters.
- */
-extern void visitSelectedControlPoints( GHashTable *col, visitSelectedControlPointsVisitor f, gpointer udata );
-/**
- * NOTE: doesn't do all, just all on selected spline.
- */
-extern void visitAllControlPoints( GHashTable *col, visitSelectedControlPointsVisitor f, gpointer udata );
-
 extern void CVVisitAdjacentToSelectedControlPoints( CharView *cv, bool preserveState,
 						    visitSelectedControlPointsVisitor f, void* udata );
 
@@ -1488,5 +1454,9 @@ extern int CVNearLBearingLine( CharView* cv, real x, real fudge );
 extern void CVMenuConstrain(GWindow gw, struct gmenuitem *mi, GEvent *UNUSED(e));
 
 
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* FONTFORGE_VIEWS_H */

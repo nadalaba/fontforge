@@ -1,21 +1,18 @@
 # Distributed under the original FontForge BSD 3-clause license
 
 # * Run the 'pofiles' command to generate the binary .mo files
-# * Run the 'potfiles' ocmmand to generate the master .pot file
+# * Run the 'potfiles' command to generate the master .pot file
 #   (which contains all translatable strings)
 # * Run the 'fullpo' command to generate the .po files, merged
 #   with the master .pot file and with context
 
 # TODO: Probably should add a FindXGettext or something
-add_custom_target(potfiles
-  COMMAND xgettext
-    --from-code=utf-8
-    -k_ -kN_ -kS_ -kU_ -kNU_ -kP_:1,2
-    --sort-by-file
-    --add-comments=GT:
-    "-o${CMAKE_CURRENT_BINARY_DIR}/FontForge.pot"
+file(GLOB FONTFORGE_SOURCES
     ../fontforge/*.c
+    ../fontforge/*.cpp
     ../fontforgeexe/*.c
+    ../fontforgeexe/*.cpp
+    ../fontforgeexe/gtk/*.cpp
     ../gdraw/*.c
     ../gutils/*.c
     ../inc/*.h
@@ -23,6 +20,15 @@ add_custom_target(potfiles
     ../Unicode/*.h
     ../desktop/org.fontforge.FontForge.appdata.xml.in
     ../desktop/org.fontforge.FontForge.desktop
+)
+add_custom_target(potfiles
+  COMMAND xgettext
+    --from-code=utf-8
+    -k_ -kN_ -kS_ -kU_ -kNU_ -kP_:1,2
+    --sort-by-file
+    --add-comments=GT:
+    "-o${CMAKE_CURRENT_BINARY_DIR}/FontForge.pot"
+    ${FONTFORGE_SOURCES}
   COMMAND patch "${CMAKE_CURRENT_BINARY_DIR}/FontForge.pot" "pottitle.patch"
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -31,7 +37,7 @@ file(STRINGS LINGUAS _langs)
 
 foreach(_lang ${_langs})
   set(_input "${CMAKE_CURRENT_SOURCE_DIR}/${_lang}.po")
-  set(_output "${CMAKE_CURRENT_BINARY_DIR}/${_lang}.mo")
+  set(_output "${CMAKE_CURRENT_BINARY_DIR}/${_lang}/LC_MESSAGES/FontForge.mo")
   set(_full "${CMAKE_CURRENT_BINARY_DIR}/full/${_lang}.po")
   add_custom_command(OUTPUT "${_output}"
     COMMAND "${GETTEXT_MSGFMT_EXECUTABLE}" --check -o "${_output}" "${_input}"

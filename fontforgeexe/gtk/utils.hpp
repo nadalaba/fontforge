@@ -26,7 +26,31 @@
  */
 #pragma once
 
+#include <clocale>
 #include <gtkmm.h>
 
-// Get the current topmost window
-Glib::RefPtr<Gdk::Window> gtk_get_topmost_window();
+namespace ff::ui_utils {
+
+double ui_font_em_size();
+double ui_font_eX_size();
+
+double get_current_ppi(Gtk::Widget* w);
+
+inline char get_decimal_point() { return *std::localeconv()->decimal_point; }
+
+// Under some locales (e.g. French) the double values may contain commas, and in
+// that case we separate the list entries by semicolons.
+// See https://en.wikipedia.org/wiki/Semicolon#Data.
+inline char get_list_separator() {
+    return get_decimal_point() == ',' ? ';' : ',';
+}
+
+// TODO(iorsh): Integrate this function into the global log collection
+void post_error(const char* title, const char* statement, ...);
+
+Glib::RefPtr<Gdk::Cursor> set_cursor(Gtk::Widget* widget,
+                                     const Glib::ustring& name);
+
+void unset_cursor(Gtk::Widget* widget, Glib::RefPtr<Gdk::Cursor> old_cursor);
+
+}  // namespace ff::ui_utils

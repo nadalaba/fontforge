@@ -776,7 +776,7 @@ static AnchorClass **MarkGlyphsProcessMarks(FILE *ttf,int markoffset,
     AnchorClass **classes = calloc(classcnt,sizeof(AnchorClass *)), *ac;
     char buf[50];
     int i, cnt;
-    struct mr { uint16_t class, offset; } *at_offsets;
+    struct mr { uint16_t classnum, offset; } *at_offsets;
     SplineChar *sc;
 
     fseek(ttf,markoffset,SEEK_SET);
@@ -807,10 +807,10 @@ return( NULL );
 
     at_offsets = malloc(cnt*sizeof(struct mr));
     for ( i=0; i<cnt; ++i ) {
-	at_offsets[i].class = getushort(ttf);
+	at_offsets[i].classnum = getushort(ttf);
 	at_offsets[i].offset = getushort(ttf);
-	if ( at_offsets[i].class>=classcnt ) {
-	    at_offsets[i].class = 0;
+	if ( at_offsets[i].classnum>=classcnt ) {
+	    at_offsets[i].classnum = 0;
 	    if ( markglyphs[i]>=info->glyph_cnt )
 		LogError( _("Class out of bounds in GPOS mark sub-table") );
 	    else
@@ -825,7 +825,7 @@ return( NULL );
 	if ( sc==NULL || at_offsets[i].offset==0 )
     continue;
 	sc->anchor = readAnchorPoint(ttf,markoffset+at_offsets[i].offset,
-		classes[at_offsets[i].class],at_mark,sc->anchor,info);
+		classes[at_offsets[i].classnum],at_mark,sc->anchor,info);
     }
     free(at_offsets);
 return( classes );
@@ -1439,8 +1439,8 @@ return;
 
 	cnt = 0;
 	for ( i=0; i<rcnt; ++i ) for ( j=0; j<rules[i].scnt; ++j ) {
-	    rule[cnt].u.class.nclasses = rules[i].subrules[j].classindeces;
-	    rule[cnt].u.class.ncnt = rules[i].subrules[j].ccnt;
+	    rule[cnt].u.fpc_class.nclasses = rules[i].subrules[j].classindeces;
+	    rule[cnt].u.fpc_class.ncnt = rules[i].subrules[j].ccnt;
 	    rules[i].subrules[j].classindeces = NULL;
 	    rule[cnt].lookup_cnt = rules[i].subrules[j].scnt;
 	    rule[cnt].lookups = rules[i].subrules[j].sl;
@@ -1615,14 +1615,14 @@ return;
 
 	cnt = 0;
 	for ( i=0; i<rcnt; ++i ) for ( j=0; j<rules[i].scnt; ++j ) {
-	    rule[cnt].u.class.nclasses = rules[i].subrules[j].classindeces;
-	    rule[cnt].u.class.ncnt = rules[i].subrules[j].ccnt;
+	    rule[cnt].u.fpc_class.nclasses = rules[i].subrules[j].classindeces;
+	    rule[cnt].u.fpc_class.ncnt = rules[i].subrules[j].ccnt;
 	    rules[i].subrules[j].classindeces = NULL;
-	    rule[cnt].u.class.bclasses = rules[i].subrules[j].bci;
-	    rule[cnt].u.class.bcnt = rules[i].subrules[j].bccnt;
+	    rule[cnt].u.fpc_class.bclasses = rules[i].subrules[j].bci;
+	    rule[cnt].u.fpc_class.bcnt = rules[i].subrules[j].bccnt;
 	    rules[i].subrules[j].bci = NULL;
-	    rule[cnt].u.class.fclasses = rules[i].subrules[j].fci;
-	    rule[cnt].u.class.fcnt = rules[i].subrules[j].fccnt;
+	    rule[cnt].u.fpc_class.fclasses = rules[i].subrules[j].fci;
+	    rule[cnt].u.fpc_class.fcnt = rules[i].subrules[j].fccnt;
 	    rules[i].subrules[j].fci = NULL;
 	    rule[cnt].lookup_cnt = rules[i].subrules[j].scnt;
 	    rule[cnt].lookups = rules[i].subrules[j].sl;
@@ -2405,39 +2405,50 @@ return;
 }
 
 static void readttffeatnameparameters(FILE *ttf,int32_t pos,uint32_t tag,
-	struct ttfinfo *info) {
+	struct ttfinfo *info, enum otffn_field field) {
     int version, nid;
     struct otffeatname *fn;
     uint32_t here;
 
     here = ftell(ttf);
     fseek(ttf,pos,SEEK_SET);
-    version = getushort(ttf);	/* Minor version #, currently (2009) 0 */
+	if ( (tag & 0xffff0000) == CHR('c','v','\0','\0') &&
+		(tag & 0x0000ff00) >= ('0' << 8) && (tag & 0x0000ff00) <= ('9' << 8) &&
+		(tag & 0x000000ff) >= ('0') && (tag & 0x000000ff) <= ('9') ) {
+			version = 0; /* ignore version for 'ccXX' */
+	}
+	else {
+		version = getushort(ttf);	/* Minor version #, currently (2009) 0 */
+	}
     nid = getushort(ttf);
+	if ( field >= otffn_paramname_begin ) {
+			nid += field - otffn_paramname_begin;
+	}
     fseek(ttf,here,SEEK_SET);
 
     if ( version>=10 || nid<256 || nid>32767 ) {
-	if ( nid<256 || nid>32767 )
-	    LogError(_("The name parameter of the '%c%c%c%c' feature does not contain a valid name id."),
-		    tag>>24, tag>>16, tag>>8, tag );
-	else
-	    LogError(_("The name parameter of the '%c%c%c%c' feature has an unlikely version number %d."),
-		    tag>>24, tag>>16, tag>>8, tag, version );
-	info->bad_ot = true;
-return;
+		if ( nid<256 || nid>32767 )
+			LogError(_("The name parameter of the '%c%c%c%c' feature does not contain a valid name id."),
+				tag>>24, tag>>16, tag>>8, tag );
+		else
+			LogError(_("The name parameter of the '%c%c%c%c' feature has an unlikely version number %d."),
+				tag>>24, tag>>16, tag>>8, tag, version );
+		info->bad_ot = true;
+		return;
     }
-    for ( fn=info->feat_names; fn!=NULL && fn->tag!=tag; fn=fn->next );
+    for ( fn=info->feat_names; fn!=NULL && (fn->tag!=tag || fn->field!=field); fn=fn->next );
     if ( fn!=NULL ) {
-	if ( fn->nid == nid )
-return;
-	LogError(_("There are multiple name ids naming the '%c%c%c%c' feature\n this is technically legitimate, but fontforge can't handle it.\n"),
-		tag>>24, tag>>16, tag>>8, tag );
-return;
+		if ( fn->nid == nid )
+			return;
+		LogError(_("There are multiple name ids naming the '%c%c%c%c' feature\n this is technically legitimate, but fontforge can't handle it.\n"),
+			tag>>24, tag>>16, tag>>8, tag );
+		return;
     }
 
     fn = chunkalloc( sizeof(*fn) );
     fn->tag = tag;
     fn->nid = nid;
+	fn->field = field;
     fn->next = info->feat_names;
     info->feat_names = fn;
     fn->names = FindAllLangEntries(ttf,info,nid);
@@ -2522,6 +2533,7 @@ static struct feature *readttffeatures(FILE *ttf,int32_t pos,int isgpos, struct 
     int i,j;
     struct feature *features;
     int parameters;
+	int ncnt;
 
     if ( pos>=info->g_bounds ) {
 	LogError(_("Attempt to read feature data beyond end of %s table"), isgpos ? "GPOS" : "GSUB" );
@@ -2559,7 +2571,39 @@ return( NULL );
 	} else if ( features[i].tag>=CHR('s','s','0','1') && features[i].tag<=CHR('s','s','2','0') &&
 		parameters!=0 && !feof(ttf)) {
 	    readttffeatnameparameters(ttf,pos+parameters+features[i].offset,
-		    features[i].tag,info);
+		    features[i].tag,info, otffn_featname);
+	} else if ( features[i].tag>=CHR('c','v','0','1') && features[i].tag<=CHR('c','v','9','9') &&
+		parameters!=0 && !feof(ttf)) {
+		fseek(ttf,pos+parameters+features[i].offset+2,SEEK_SET);
+		if( getushort(ttf) != 0 )
+			readttffeatnameparameters(ttf,pos+parameters+features[i].offset+2,
+				features[i].tag,info, otffn_featname);
+
+		fseek(ttf,pos+parameters+features[i].offset+4,SEEK_SET);
+		if( getushort(ttf) != 0 )
+			readttffeatnameparameters(ttf,pos+parameters+features[i].offset+4,
+				features[i].tag,info, otffn_tooltiptext);
+
+		fseek(ttf,pos+parameters+features[i].offset+6,SEEK_SET);
+		if( getushort(ttf) != 0 )
+			readttffeatnameparameters(ttf,pos+parameters+features[i].offset+6,
+				features[i].tag,info, otffn_sampletext);
+
+		fseek(ttf,pos+parameters+features[i].offset+8,SEEK_SET);
+		ncnt = getushort(ttf);
+		for ( j = 0; j < ncnt; ++j ) {
+			readttffeatnameparameters(ttf,pos+parameters+features[i].offset+10,
+				features[i].tag,info, otffn_paramname_begin + j);
+		}
+		fseek(ttf,pos+features[i].offset+12,SEEK_SET);
+		ncnt = getushort(ttf);
+		if ( ncnt > 0 ) {
+			LogError( _("The character list in the feature parameter table of '%c%c%c%c' is ignored."), features[i].tag >> 24,features[i].tag >> 16,features[i].tag >> 8,features[i].tag );
+		}
+		//for ( j = 0; j < ncnt; ++j ) {
+		//	get3byte(ttf); // TODO: character[j]
+		//}
+		fseek(ttf,pos+features[i].offset+2,SEEK_SET);
 	}
 	features[i].lcnt = getushort(ttf);
 	if ( feof(ttf) ) {
@@ -5326,7 +5370,7 @@ static struct glyphvariants *ttf_math_read_gvtable(FILE *ttf,struct ttfinfo *inf
     char *pt;
     int ic_offset, pcnt;
     SplineChar *sc;
-    char ebuf[10], buffer[50], *ext;
+    char ebuf[16], buffer[50], *ext;
 
     fseek(ttf,start,SEEK_SET);
     ga_offset = getushort(ttf);

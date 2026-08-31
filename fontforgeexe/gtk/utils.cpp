@@ -27,25 +27,117 @@
 
 #include "utils.hpp"
 
-Glib::RefPtr<Gdk::Window> gtk_get_topmost_window() {
-    Glib::RefPtr<Gdk::Screen> screen = Gdk::Screen::get_default();
+#include <glib/gprintf.h>
+#include <iostream>
 
-    Glib::RefPtr<Gdk::Window> topmost_window = screen->get_active_window();
-    if (topmost_window) {
-        return topmost_window;
-    }
+#include "application.hpp"
 
-    // Gdk::Screen::get_active_window() is not always reliable, e.g when the
-    // active window was just closed, and its parent hasn't been activated back
-    // yet.
-    std::vector<Glib::RefPtr<Gdk::Window>> stack = screen->get_window_stack();
-    for (auto rit = stack.rbegin(); rit != stack.rend(); ++rit) {
-        if ((*rit)->get_window_type() == Gdk::WINDOW_TOPLEVEL &&
-            (*rit)->is_visible()) {
-            topmost_window = *rit;
-            break;
-        }
-    }
+namespace ff::ui_utils {
 
-    return topmost_window;
+static Cairo::TextExtents ui_font_extents(const std::string& sample_text) {
+    Pango::FontDescription font =
+        ff::app::ColorManager::instance().style_context()->get_font();
+
+    // Create the toy font face explicitly once and hold it in a static so its
+    // reference is released cleanly at program exit, preventing the
+    // FcPatternDuplicate leak that occurs inside cairo_toy_font_face_create().
+    // The destructor calls unreference() to balance the implicit reference.
+    struct ToyFontFace {
+        Cairo::RefPtr<Cairo::ToyFontFace> face;
+        explicit ToyFontFace(const std::string& family)
+            : face(Cairo::ToyFontFace::create(
+                  family, Cairo::FontSlant::FONT_SLANT_NORMAL,
+                  Cairo::FontWeight::FONT_WEIGHT_NORMAL)) {}
+        ~ToyFontFace() { face->unreference(); }
+    };
+    static ToyFontFace toy_face(font.get_family());
+
+    Cairo::RefPtr<Cairo::ImageSurface> srf =
+        Cairo::ImageSurface::create(Cairo::Format::FORMAT_RGB24, 100, 100);
+    Cairo::RefPtr<Cairo::Context> cairo_context = Cairo::Context::create(srf);
+
+    cairo_context->set_font_face(toy_face.face);
+    cairo_context->set_font_size(font.get_size() / PANGO_SCALE *
+                                 Gdk::Screen::get_default()->get_resolution() /
+                                 72);
+
+    Cairo::TextExtents extents;
+    cairo_context->get_text_extents(sample_text, extents);
+    return extents;
 }
+
+double ui_font_em_size() {
+    Cairo::TextExtents extents = ui_font_extents("m");
+    return extents.x_advance;
+}
+
+double ui_font_eX_size() {
+    Cairo::TextExtents extents = ui_font_extents("X");
+    return extents.height;
+}
+
+double get_current_ppi(Gtk::Widget* w) {
+    Glib::RefPtr<const Gdk::Display> display = w->get_display();
+    Glib::RefPtr<Gdk::Window> window = w->get_window();
+    Glib::RefPtr<const Gdk::Monitor> monitor =
+        display->get_monitor_at_window(window);
+
+    Gdk::Rectangle monitor_geom;
+    monitor->get_geometry(monitor_geom);
+    int monitor_width_mm = monitor->get_width_mm();
+    int monitor_width_px = monitor_geom.get_width();
+
+    double ppi = 25.4 * monitor_width_px / monitor_width_mm;
+    return ppi;
+}
+
+void post_error(const char* title, const char* statement, ...) {
+    va_list ap;
+    va_start(ap, statement);
+
+    // Format error statement
+    gchar* result_string = NULL;
+    gint chars_written = g_vasprintf(&result_string, statement, ap);
+    if (chars_written >= 0 && result_string != NULL) {
+        // Passing use_markup=false causes GTK to embolden the text, and we
+        // don't want it.
+        Gtk::MessageDialog message_dlg(result_string, true, Gtk::MESSAGE_ERROR,
+                                       Gtk::BUTTONS_OK, true);
+        message_dlg.set_title(title);
+        message_dlg.run();
+        g_free(result_string);
+    } else {
+        std::cerr << "Error formatting statement \"" << statement << "\""
+                  << std::endl;
+    }
+
+    va_end(ap);
+}
+
+Glib::RefPtr<Gdk::Cursor> set_cursor(Gtk::Widget* widget,
+                                     const Glib::ustring& name) {
+    if (widget == nullptr) return {};
+
+    Glib::RefPtr<Gdk::Window> gdk_window = widget->get_window();
+    if (!gdk_window) return {};
+
+    auto old_cursor = gdk_window->get_cursor();
+
+    Glib::RefPtr<Gdk::Cursor> new_cursor =
+        Gdk::Cursor::create(gdk_window->get_display(), name);
+    gdk_window->set_cursor(new_cursor);
+
+    return old_cursor;
+}
+
+void unset_cursor(Gtk::Widget* widget, Glib::RefPtr<Gdk::Cursor> old_cursor) {
+    if (widget == nullptr) return;
+
+    Glib::RefPtr<Gdk::Window> gdk_window = widget->get_window();
+    if (!gdk_window) return;
+
+    // old_cursor is allowed to be NULL
+    gdk_window->set_cursor(old_cursor);
+}
+
+}  // namespace ff::ui_utils

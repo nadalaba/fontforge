@@ -118,7 +118,6 @@ extern int old_sfnt_flags;		/* in savefont.c */
 extern int old_ps_flags;		/* in savefont.c */
 extern int old_validate;		/* in savefontdlg.c */
 extern int old_fontlog;			/* in savefontdlg.c */
-extern int oldsystem;			/* in bitmapdlg.c */
 extern int preferpotrace;		/* in autotrace.c */
 extern int autotrace_ask;		/* in autotrace.c */
 extern int mf_ask;			/* in autotrace.c */
@@ -473,7 +472,6 @@ static struct prefs_list {
 	{ "AlmostHVBound", pr_int, &CVShows.hvoffset, NULL, NULL, '\0', NULL, 1, NULL },
 	{ "CheckSelfIntersects", pr_bool, &CVShows.checkselfintersects, NULL, NULL, '\0', NULL, 1, NULL },
 	{ "ShowDebugChanges", pr_bool, &CVShows.showdebugchanges, NULL, NULL, '\0', NULL, 1, NULL },
-	{ "DefaultScreenDpiSystem", pr_int, &oldsystem, NULL, NULL, '\0', NULL, 1, NULL },
 	{ "DefaultOutputFormat", pr_int, &oldformatstate, NULL, NULL, '\0', NULL, 1, NULL },
 	{ "DefaultBitmapFormat", pr_int, &oldbitmapstate, NULL, NULL, '\0', NULL, 1, NULL },
 	{ "SaveValidate", pr_int, &old_validate, NULL, NULL, '\0', NULL, 1, NULL },
@@ -565,6 +563,11 @@ static void FileChooserPrefsChanged(void *pointless) {
 static void ProcessFileChooserPrefs(void) {
     unichar_t **b;
     int i;
+#if _WIN32
+    char *userProfile = getenv("USERPROFILE");
+    unichar_t *u_userProfile = userProfile ? utf82u_copy(userProfile) : NULL;
+    u_GFileNormalizePath(u_userProfile);
+#endif
 
     GFileChooserSetShowHidden(gfc_showhidden);
     GFileChooserSetDirectoryPlacement(gfc_dirplace);
@@ -573,17 +576,21 @@ static void ProcessFileChooserPrefs(void) {
 	i = 0;
 #ifdef __Mac
 	b[i++] = uc_copy("~/Library/Fonts/");
-#endif
-	b[i++] = uc_copy("~/fonts");
-#ifdef __Mac
 	b[i++] = uc_copy("/Library/Fonts/");
 	b[i++] = uc_copy("/System/Library/Fonts/");
-#endif
-#if __CygWin
+#elif _WIN32
+	b[i++] = uc_copy("C:/Windows/Fonts/");
+	if (u_userProfile != NULL) {	
+	    unichar_t *fontsPath = uc_copy("/AppData/Local/Microsoft/Windows/Fonts/");
+	    b[i++] = u_concat(u_userProfile, fontsPath);
+	    free(fontsPath);
+	    free(u_userProfile);
+	}
+#else /* Linux, Unix */
 	b[i++] = uc_copy("/usr/share/fonts/");
 	b[i++] = uc_copy("/usr/share/X11/fonts/");
-#else
-	b[i++] = uc_copy("/usr/X11R6/lib/X11/fonts/");
+	b[i++] = uc_copy("~/.local/share/fonts/");
+	b[i++] = uc_copy("~/.fonts/");
 #endif
 	b[i++] = NULL;
 	GFileChooserSetBookmarks(b);

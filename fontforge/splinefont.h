@@ -37,6 +37,10 @@
 
 #include <locale.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define extended	double
 	/* Solaris wants to define extended to be unsigned [3] unless we do this*/
 #define _EXTENDED
@@ -539,7 +543,7 @@ struct fpst_rule {
 	/* Note: Items in backtrack area are in reverse order because that's how the OT wants them */
 	/*  they need to be reversed again to be displayed to the user */
 	struct fpg glyph;
-	struct fpc class;
+	struct fpc fpc_class;
 	struct fpv coverage;
 	struct fpr rcoverage;
     } u;
@@ -666,10 +670,17 @@ struct otfname {
     char *name;		/* utf8 */
 };
 
+enum otffn_field {
+    otffn_featname, otffn_tooltiptext, otffn_sampletext,
+    otffn_characters /* reserved */,
+    otffn_paramname_begin /* this is the beginning of parameter block, so */
+                          /* there should be no enum elements beyond this */
+};
 struct otffeatname {
     uint32_t tag;			/* Feature tag */
     struct otfname *names;
     struct otffeatname *next;
+    enum otffn_field field;
     uint16_t nid;			/* temporary value */
 };
 
@@ -1213,7 +1224,7 @@ typedef struct splinefont {
     unsigned int multilayer: 1;			/* only applies if TYPE3 is set, means this font can contain strokes & fills */
 						/*  I leave it in so as to avoid cluttering up code with #ifdefs */
     unsigned int strokedfont: 1;
-    unsigned int new: 1;			/* A new and unsaved font */
+    unsigned int isnew: 1;			/* A new and unsaved font */
     unsigned int compacted: 1;			/* only used when opening a font */
     unsigned int backedup: 2;			/* 0=>don't know, 1=>no, 2=>yes */
     unsigned int use_typo_metrics: 1;		/* The standard says to. But MS */
@@ -1239,7 +1250,7 @@ typedef struct splinefont {
     char *origname;		/* filename of font file (ie. if not an sfd) */
     char *autosavename;
     int display_size;		/* a val <0 => Generate our own images from splines, a value >0 => find a bdf font of that size */
-    struct psdict *private;	/* read in from type1 file or provided by user */
+    struct psdict *private_dict;	/* read in from type1 file or provided by user */
     char *xuid;
     struct pfminfo pfminfo;
     struct ttflangname *names;
@@ -1336,7 +1347,6 @@ typedef struct splinefont {
     char *woffMetadata;
     real ufo_ascent, ufo_descent;	/* I don't know what these mean, they don't seem to correspond to any other ascent/descent pair, but retain them so round-trip ufo input/output leaves them unchanged */
 	    /* ufo_descent is negative */
-    char *styleMapFamilyName;
     struct sfundoes *undoes;
     int preferred_kerning; // 1 for U. F. O. native, 2 for feature file, 0 undefined. Input functions shall flag 2, I think. This is now in S. F. D. in order to round-trip U. F. O. consistently.
 } SplineFont;
@@ -1404,10 +1414,6 @@ typedef struct anchorpos {
     unsigned int ticked: 1;	/* Used as a mark to mark */
 } AnchorPos;
 
-struct compressors { char *ext, *decomp, *recomp; };
-#define COMPRESSORS_EMPTY { NULL, NULL, NULL }
-extern struct compressors compressors[];
-
 enum archive_list_style { ars_tar, ars_zip };
 
 struct archivers {
@@ -1455,7 +1461,6 @@ extern const unichar_t *_uGetModifiers(const unichar_t *fontname, const unichar_
 	const unichar_t *weight);
 extern void ttfdumpbitmap(SplineFont *sf,struct alltabs *at,int32_t *sizes);
 extern void SplineFontSetUnChanged(SplineFont *sf);
-extern EncMap* SFGetMap(SplineFont *sf);
 
 extern bool RealNear(real a,real b);
 
@@ -1646,7 +1651,7 @@ extern SplineFont *_ReadSplineFont(FILE *file, const char *filename, enum openfl
 extern SplineFont *ReadSplineFont(const char *filename,enum openflags);	/* Don't use this, use LoadSF instead */
 extern void ArchiveCleanup(char *archivedir);
 extern char *Unarchive(char *name, char **_archivedir);
-extern char *Decompress(char *name, int compression);
+extern char *Decompress(char *name);
 extern uint16_t MacStyleCode( SplineFont *sf, uint16_t *psstyle );
 extern char **NamesReadUFO(char *filename);
 extern char *SFSubfontnameStart(char *fname);
@@ -1680,7 +1685,7 @@ extern SplineChar *SFGetOrMakeCharFromUnicode( SplineFont *sf, EncMap *map, int 
 extern int DoAutoRecovery(int);
 typedef void (*DoAutoRecoveryPostRecoverFunc)(SplineFont *sf);
 
-extern int SFPrivateGuess(SplineFont *sf,int layer, struct psdict *private,
+extern int SFPrivateGuess(SplineFont *sf,int layer, struct psdict *private_dict,
 	char *name, int onlyone);
 
 extern void SFRemoveLayer(SplineFont *sf,int l);
@@ -1831,7 +1836,7 @@ extern AnchorClass *SCValidateAnchors(SplineChar *sc);
 extern void SCTickValidationState(SplineChar *sc,int layer);
 extern int ValidatePrivate(SplineFont *sf);
 extern int SFValidate(SplineFont *sf, int layer, int force);
-extern int VSMaskFromFormat(SplineFont *sf, int layer, enum fontformat format);
+extern enum validation_state VSMaskFromFormat(SplineFont *sf, int layer, enum fontformat format);
 
 extern char *RandomParaFromScript(uint32_t script, uint32_t *lang, SplineFont *sf);
 
@@ -1846,10 +1851,6 @@ extern bigreal SFCapHeight(SplineFont *sf, int layer, int return_error);
 extern bigreal SFXHeight(SplineFont *sf, int layer, int return_error);
 extern bigreal SFAscender(SplineFont *sf, int layer, int return_error);
 extern bigreal SFDescender(SplineFont *sf, int layer, int return_error);
-
-/* Find Private Use Area range big enough to accomodate unencoded glyphs
-   with fake encoding slots. */
-extern int SFFakeUnicodeBase(SplineFont *sf);
 
 extern void SCRemoveKern(SplineChar* sc);
 extern void SCRemoveVKern(SplineChar* sc);
@@ -2027,6 +2028,8 @@ static inline void freelocale_hack(locale_t dataset) {
 #define SWITCH_TO_OLD_LOCALE() switch_to_old_locale(&tmplocale, &oldlocale); // Switch to the cached locale.
 #endif
 
-
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* FONTFORGE_SPLINEFONT_H */

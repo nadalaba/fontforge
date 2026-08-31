@@ -43,6 +43,8 @@
 #include "ustring.h"
 #include "utype.h"
 
+#include <stdbool.h>
+
 int coverageformatsallowed=3;
 int use_second_indic_scripts = true;
 
@@ -1819,24 +1821,24 @@ static SplineChar **allmarkglyphs(SplineChar ***glyphlist, int classcnt) {
     int i, tot, k;
 
     if ( classcnt==1 )
-return( SFOrderedGlyphs(glyphlist[0]));
+        return( SFOrderedGlyphs(glyphlist[0]));
 
     for ( i=tot=0; i<classcnt; ++i ) {
-	for ( k=0; glyphlist[i][k]!=NULL; ++k );
-	tot += k;
+        for ( k=0; glyphlist[i]!=NULL && glyphlist[i][k]!=NULL; ++k );
+        tot += k;
     }
     glyphs = malloc((tot+1)*sizeof(SplineChar *));
     for ( i=tot=0; i<classcnt; ++i ) {
-	for ( k=0; glyphlist[i][k]!=NULL; ++k )
-	    glyphs[tot++] = glyphlist[i][k];
+        for ( k=0; glyphlist[i]!=NULL && glyphlist[i][k]!=NULL; ++k )
+            glyphs[tot++] = glyphlist[i][k];
     }
     qsort(glyphs,tot,sizeof(SplineChar *),orderglyph);
     for ( i=k=0; i<tot; ++i ) {
-	while ( i+1<tot && glyphs[i]==glyphs[i+1]) ++i;
-	glyphs[k++] = glyphs[i];
+        while ( i+1<tot && glyphs[i]==glyphs[i+1]) ++i;
+        glyphs[k++] = glyphs[i];
     }
     glyphs[k] = NULL;
-return( glyphs );
+    return( glyphs );
 }
 
 static void dumpgposAnchorData(FILE *gpos,AnchorClass *_ac,
@@ -2197,10 +2199,10 @@ static uint16_t *FigureInitialClasses(FPST *fpst) {
     initial[fpst->nccnt] = 0xffff;
     for ( i=cnt=0; i<fpst->rule_cnt; ++i ) {
 	for ( j=0; j<cnt ; ++j )
-	    if ( initial[j] == fpst->rules[i].u.class.nclasses[0] )
+	    if ( initial[j] == fpst->rules[i].u.fpc_class.nclasses[0] )
 	break;
 	if ( j==cnt )
-	    initial[cnt++] = fpst->rules[i].u.class.nclasses[0];
+	    initial[cnt++] = fpst->rules[i].u.fpc_class.nclasses[0];
     }
     qsort(initial,cnt,sizeof(uint16_t),ui16cmp);
     initial[cnt] = 0xffff;
@@ -2288,7 +2290,7 @@ static int CntRulesStartingWithClass(FPST *fpst,uint16_t cval) {
     int i, cnt;
 
     for ( i=cnt=0; i<fpst->rule_cnt; ++i ) {
-	if ( fpst->rules[i].u.class.nclasses[0]==cval )
+	if ( fpst->rules[i].u.fpc_class.nclasses[0]==cval )
 	    ++cnt;
     }
 return( cnt );
@@ -2480,7 +2482,7 @@ static void dumpg___ContextChainClass(FILE *lfile,SplineFont *sf,
 	    putshort(lfile,subcnt);
 	    for ( j=0; j<subcnt; ++j )
 		putshort(lfile,0);
-	    for ( j=k=0; k<fpst->rule_cnt; ++k ) if ( i==fpst->rules[k].u.class.nclasses[0] ) {
+	    for ( j=k=0; k<fpst->rule_cnt; ++k ) if ( i==fpst->rules[k].u.fpc_class.nclasses[0] ) {
 		subpos = ftell(lfile);
 		fseek(lfile,pos+(1+j)*sizeof(short),SEEK_SET);
 		putshort(lfile,subpos-pos);
@@ -2490,20 +2492,20 @@ static void dumpg___ContextChainClass(FILE *lfile,SplineFont *sf,
 		    if ( fpst->rules[k].lookups[l].lookup->lookup_index!=-1 )
 			++lc;
 		if ( iscontext ) {
-		    putshort(lfile,fpst->rules[k].u.class.ncnt);
+		    putshort(lfile,fpst->rules[k].u.fpc_class.ncnt);
 		    putshort(lfile,lc);
-		    for ( l=1; l<fpst->rules[k].u.class.ncnt; ++l )
-			putshort(lfile,fpst->rules[k].u.class.nclasses[l]);
+		    for ( l=1; l<fpst->rules[k].u.fpc_class.ncnt; ++l )
+			putshort(lfile,fpst->rules[k].u.fpc_class.nclasses[l]);
 		} else {
-		    putshort(lfile,fpst->rules[k].u.class.bcnt);
-		    for ( l=0; l<fpst->rules[k].u.class.bcnt; ++l )
-			putshort(lfile,fpst->rules[k].u.class.bclasses[l]);
-		    putshort(lfile,fpst->rules[k].u.class.ncnt);
-		    for ( l=1; l<fpst->rules[k].u.class.ncnt; ++l )
-			putshort(lfile,fpst->rules[k].u.class.nclasses[l]);
-		    putshort(lfile,fpst->rules[k].u.class.fcnt);
-		    for ( l=0; l<fpst->rules[k].u.class.fcnt; ++l )
-			putshort(lfile,fpst->rules[k].u.class.fclasses[l]);
+		    putshort(lfile,fpst->rules[k].u.fpc_class.bcnt);
+		    for ( l=0; l<fpst->rules[k].u.fpc_class.bcnt; ++l )
+			putshort(lfile,fpst->rules[k].u.fpc_class.bclasses[l]);
+		    putshort(lfile,fpst->rules[k].u.fpc_class.ncnt);
+		    for ( l=1; l<fpst->rules[k].u.fpc_class.ncnt; ++l )
+			putshort(lfile,fpst->rules[k].u.fpc_class.nclasses[l]);
+		    putshort(lfile,fpst->rules[k].u.fpc_class.fcnt);
+		    for ( l=0; l<fpst->rules[k].u.fpc_class.fcnt; ++l )
+			putshort(lfile,fpst->rules[k].u.fpc_class.fclasses[l]);
 		    putshort(lfile,lc);
 		}
 		for ( l=0; l<fpst->rules[k].lookup_cnt; ++l )
@@ -2519,7 +2521,7 @@ static void dumpg___ContextChainClass(FILE *lfile,SplineFont *sf,
 
     maxcontext = 0;
     for ( i=0; i<fpst->rule_cnt; ++i ) {
-	curcontext = fpst->rules[i].u.class.ncnt+fpst->rules[i].u.class.bcnt+fpst->rules[i].u.class.fcnt;
+	curcontext = fpst->rules[i].u.fpc_class.ncnt+fpst->rules[i].u.fpc_class.bcnt+fpst->rules[i].u.fpc_class.fcnt;
 	if ( curcontext>maxcontext ) maxcontext = curcontext;
     }
     if ( maxcontext>at->os2.maxContext )
@@ -3247,11 +3249,27 @@ return( NULL );
 return( efile );
 }
 
-struct otffeatname *findotffeatname(uint32_t tag,SplineFont *sf) {
+struct otffeatname *findotffeatname(uint32_t tag,enum otffn_field field,SplineFont *sf) {
     struct otffeatname *fn;
 
-    for ( fn=sf->feat_names; fn!=NULL && fn->tag!=tag; fn=fn->next );
-return( fn );
+    for ( fn=sf->feat_names; fn!=NULL && (fn->tag!=tag || fn->field!=field); fn=fn->next );
+    return( fn );
+}
+
+static bool getfeatnamefromginfo(struct alltabs *at, FILE *g___, uint32_t tag, enum otffn_field field, SplineFont *sf, uint32_t name_param_loc, uint32_t name_param_ptr, uint16_t *nameid) {
+	struct otffeatname *fn;
+	if ( (fn = findotffeatname(tag,field,sf))!=NULL ) {
+		if ( fn->nid==0 )
+			fn->nid = at->next_strid++;
+		fseek(g___,name_param_ptr,SEEK_SET);
+		putshort(g___,name_param_loc-name_param_ptr);
+		if ( nameid )
+			*nameid = fn->nid;
+		return true;
+	}
+	else {
+		return false;
+	}
 }
 
 static FILE *dumpg___info(struct alltabs *at, SplineFont *sf,int is_gpos) {
@@ -3347,7 +3365,7 @@ return( NULL );
 	ginfo.feat_lookups[i].name_param_ptr = 0;
 	if ( ginfo.feat_lookups[i].tag==CHR('s','i','z','e') )
 	    size_params_ptr = ftell(g___);
-	else if ( ginfo.feat_lookups[i].tag>=CHR('s','s','0','1') && ginfo.feat_lookups[i].tag<=CHR('s','s','2','0'))
+	else if ( (ginfo.feat_lookups[i].tag>=CHR('s','s','0','1') && ginfo.feat_lookups[i].tag<=CHR('s','s','2','0')) || (ginfo.feat_lookups[i].tag>=CHR('c','v','0','1') && ginfo.feat_lookups[i].tag<=CHR('c','v','9','9')) )
 	    ginfo.feat_lookups[i].name_param_ptr = ftell(g___);
 	putshort(g___,0);			/* No feature params (we'll come back for 'size') */
 	putshort(g___,ginfo.feat_lookups[i].lcnt);/* this many lookups */
@@ -3373,17 +3391,48 @@ return( NULL );
 	putshort(g___,sf->design_range_top);
     }
     for ( i=0; i<ginfo.fcnt; ++i ) {
-	if ( ginfo.feat_lookups[i].name_param_ptr!=0 &&
-		(fn = findotffeatname(ginfo.feat_lookups[i].tag,sf))!=NULL ) {
-	    if ( fn->nid==0 )
-		fn->nid = at->next_strid++;
-	    uint32_t name_param_loc = ftell(g___);
-	    fseek(g___,ginfo.feat_lookups[i].name_param_ptr,SEEK_SET);
-	    putshort(g___,name_param_loc-ginfo.feat_lookups[i].name_param_ptr);
-	    fseek(g___,name_param_loc,SEEK_SET);
-	    putshort(g___,0);		/* Minor version number */
-	    putshort(g___,fn->nid);
-	}
+		if ( ginfo.feat_lookups[i].name_param_ptr!=0 ) {
+			if ( (ginfo.feat_lookups[i].tag & 0xffff0000) == CHR('c','v','\0','\0') ) {
+				uint16_t featUiLabelNameId = 0;
+				uint16_t featUiTooltipTextNameId = 0;
+				uint16_t sampleTextNameId = 0;
+				uint16_t numNamedParameters = 0;
+				uint16_t firstParamUiLabelNameId = 0;
+				uint32_t name_param_loc = ftell(g___);
+				getfeatnamefromginfo(at, g___, ginfo.feat_lookups[i].tag, otffn_featname, sf,
+					name_param_loc, ginfo.feat_lookups[i].name_param_ptr, &featUiLabelNameId);
+				getfeatnamefromginfo(at, g___, ginfo.feat_lookups[i].tag, otffn_tooltiptext, sf,
+					name_param_loc, ginfo.feat_lookups[i].name_param_ptr, &featUiTooltipTextNameId);
+				getfeatnamefromginfo(at, g___, ginfo.feat_lookups[i].tag, otffn_sampletext, sf,
+					name_param_loc, ginfo.feat_lookups[i].name_param_ptr, &sampleTextNameId);
+				for ( numNamedParameters = 0; numNamedParameters < 65536-256; ++numNamedParameters ) {
+					if ( !getfeatnamefromginfo(at, g___, ginfo.feat_lookups[i].tag,
+						otffn_paramname_begin + numNamedParameters, sf, name_param_loc,
+						ginfo.feat_lookups[i].name_param_ptr,
+						numNamedParameters == 0 ? &firstParamUiLabelNameId : NULL) )
+							break;
+				}
+
+				fseek(g___,name_param_loc,SEEK_SET);
+				putshort(g___,0); // format
+				putshort(g___,featUiLabelNameId);
+				putshort(g___,featUiTooltipTextNameId);
+				putshort(g___,sampleTextNameId);
+				putshort(g___,numNamedParameters);
+				putshort(g___,firstParamUiLabelNameId);
+				putshort(g___,0); // TODO: charCount
+				//putu24(g___,0); // TODO: character[charCount]
+			}
+			else {
+				uint32_t name_param_loc = ftell(g___);
+				uint16_t nameId = 0;
+				getfeatnamefromginfo(at, g___, ginfo.feat_lookups[i].tag, otffn_featname, sf,
+					name_param_loc, ginfo.feat_lookups[i].name_param_ptr, &nameId);
+				fseek(g___,name_param_loc,SEEK_SET);
+				putshort(g___,0);		/* Minor version number */
+				putshort(g___,nameId);
+			}
+		}
     }
     /* And that should finish all the features */
 
